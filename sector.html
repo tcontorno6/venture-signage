@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>VVP Sector Board</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0e17;
+    --bg2:#0d1220;
+    --ink:#f4f6fb;
+    --muted:#8b95ad;
+    --line:#1c2437;
+    --up:#39d98a;
+    --down:#ff5c6c;
+    --gold:#c9a86a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(120% 80% at 50% -10%, #131a2b 0%, var(--bg) 55%),
+      var(--bg);
+    color:var(--ink);
+    font-family:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+    height:100vh;
+  }
+  .screen{
+    height:100vh;width:100vw;
+    display:flex;flex-direction:column;
+    padding:5.5vh 5vw 4.5vh;
+  }
+  /* ---- top brand row ---- */
+  .brand{
+    display:flex;align-items:center;justify-content:space-between;
+    letter-spacing:.28em;font-size:1.7vh;color:var(--muted);
+    text-transform:uppercase;font-weight:600;
+  }
+  .brand .dot{width:.7vh;height:.7vh;border-radius:50%;background:var(--gold);
+    box-shadow:0 0 14px var(--gold);display:inline-block;margin-right:1vh}
+  .brand .live{display:flex;align-items:center;color:var(--muted)}
+  /* ---- headline ---- */
+  .head{margin-top:6vh}
+  .ticker{font-size:11vh;font-weight:800;line-height:.9;letter-spacing:-.02em}
+  .name{margin-top:1.4vh;font-size:3.1vh;font-weight:500;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.14em}
+  .price-row{margin-top:4vh;display:flex;align-items:flex-end;gap:2.4vw}
+  .price{font-size:7vh;font-weight:700;line-height:1}
+  .chg{font-size:3.4vh;font-weight:700;padding-bottom:.7vh}
+  .chg .arrow{font-size:2.6vh;margin-right:.4vw}
+  .up{color:var(--up)}
+  .down{color:var(--down)}
+  .frame{color:var(--muted);font-size:2vh;margin-top:1.6vh;letter-spacing:.05em}
+  /* ---- chart ---- */
+  .chart-wrap{flex:1;position:relative;margin-top:3vh;min-height:0}
+  canvas{position:absolute;inset:0}
+  /* ---- footer ---- */
+  .foot{
+    display:flex;justify-content:space-between;align-items:center;
+    color:var(--muted);font-size:1.7vh;letter-spacing:.05em;margin-top:2vh;
+  }
+  .foot .vvp{color:var(--gold);letter-spacing:.2em;font-weight:600}
+  .stats{display:flex;gap:3vw}
+  .stats b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+  <div class="screen">
+    <div class="brand">
+      <span><span class="dot"></span>Venture Visionary Partners</span>
+      <span class="live" id="liveTag">SECTOR&nbsp;BOARD</span>
+    </div>
+
+    <div class="head">
+      <div class="ticker" id="ticker">XLK</div>
+      <div class="name" id="name">Technology</div>
+      <div class="price-row">
+        <div class="price" id="price">—</div>
+        <div class="chg" id="chg">—</div>
+      </div>
+      <div class="frame" id="frame">Last 3 months</div>
+    </div>
+
+    <div class="chart-wrap"><canvas id="c"></canvas></div>
+
+    <div class="foot">
+      <span class="vvp">VVP</span>
+      <span class="stats" id="stats"></span>
+      <span id="asof">—</span>
+    </div>
+  </div>
+
+<script>
+/* ---------------------------------------------------------------
+   VVP Sector Board — one portrait chart per screen.
+   Point each Videri panel at:  .../sector.html?symbol=XLK
+   Optional: &api=http://HOST:5000  to use a live-data proxy.
+   Falls back to realistic demo data so the panel always looks live.
+----------------------------------------------------------------*/
+
+// The 14 SPDR ("spider") tiles. Ticker -> {name, approx price level}
+const SECTORS = {
+  SPY:  ['S&P 500',                560],
+  XLK:  ['Technology',             235],
+  XLF:  ['Financials',              48],
+  XLV:  ['Health Care',           145],
+  XLY:  ['Consumer Discretionary',205],
+  XLP:  ['Consumer Staples',       82],
+  XLE:  ['Energy',                  92],
+  XLI:  ['Industrials',           138],
+  XLB:  ['Materials',              92],
+  XLU:  ['Utilities',              78],
+  XLRE: ['Real Estate',            42],
+  XLC:  ['Communications',        102],
+  DIA:  ['Dow 30',                430],
+  GLD:  ['Gold',                  245],
+};
+
+const params = new URLSearchParams(location.search);
+const SYMBOL = (params.get('symbol') || 'XLK').toUpperCase();
+const API    = params.get('api') || ''; // e.g. http://192.168.1.50:5000
+const [NAME, LEVEL] = SECTORS[SYMBOL] || [SYMBOL, 100];
+
+document.getElementById('ticker').textContent = SYMBOL;
+document.getElementById('name').textContent   = NAME;
+
+// ---- deterministic seeded RNG so each symbol has a stable, real-looking curve
+function seedFrom(str){let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}return h>>>0;}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+function demoSeries(symbol, level, n=90){
+  const rnd = mulberry32(seedFrom(symbol));
+  const drift = (rnd()-0.42)*0.0016;         // slight per-symbol trend bias
+  const vol   = 0.006 + rnd()*0.006;         // daily vol
+  let price = level*(0.9+rnd()*0.12);
+  const out=[];
+  for(let i=0;i<n;i++){
+    const shock=(rnd()-0.5)*2*vol;
+    price = price*(1+drift+shock);
+    out.push(price);
+  }
+  return out;
+}
+
+// ---- try live data, else demo
+async function loadSeries(){
+  // 1) optional backend proxy that returns {closes:[...], asof:"..."}
+  if(API){
+    try{
+      const r=await fetch(`${API.replace(/\/$/,'')}/api/market/${SYMBOL}`,{cache:'no-store'});
+      if(r.ok){const j=await r.json(); if(j.closes && j.closes.length>5)
+        return {closes:j.closes, asof:j.asof, live:true};}
+    }catch(e){}
+  }
+  // 2) demo fallback (deterministic, looks real)
+  return {closes:demoSeries(SYMBOL, LEVEL), asof:null, live:false};
+}
+
+const fmt = (v)=> v>=1000 ? v.toLocaleString('en-US',{maximumFractionDigits:0})
+                          : v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+let chart;
+function render(closes, live, asof){
+  const first=closes[0], last=closes[closes.length-1];
+  const chgPct=((last-first)/first)*100;
+  const up=chgPct>=0;
+  const col=up?getCSS('--up'):getCSS('--down');
+
+  document.getElementById('price').textContent = fmt(last);
+  const chgEl=document.getElementById('chg');
+  chgEl.className='chg '+(up?'up':'down');
+  chgEl.innerHTML=`<span class="arrow">${up?'▲':'▼'}</span>${up?'+':''}${chgPct.toFixed(2)}%`;
+
+  const hi=Math.max(...closes), lo=Math.min(...closes);
+  document.getElementById('stats').innerHTML=
+    `H&nbsp;<b>${fmt(hi)}</b>&nbsp;&nbsp;L&nbsp;<b>${fmt(lo)}</b>`;
+
+  const tag=document.getElementById('liveTag');
+  tag.textContent = live ? '● LIVE' : 'SECTOR BOARD';
+  tag.style.color = live ? getCSS('--up') : getCSS('--muted');
+
+  const d=new Date();
+  document.getElementById('asof').textContent =
+    'as of '+(asof || d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}));
+
+  const ctx=document.getElementById('c').getContext('2d');
+  const g=ctx.createLinearGradient(0,0,0,ctx.canvas.height||900);
+  g.addColorStop(0, hexA(col,0.42));
+  g.addColorStop(1, hexA(col,0.0));
+
+  const data={
+    labels:closes.map((_,i)=>i),
+    datasets:[{
+      data:closes, borderColor:col, borderWidth:3,
+      fill:true, backgroundColor:g, tension:.4,
+      pointRadius:0, cubicInterpolationMode:'monotone',
+    }]
+  };
+  const opts={
+    responsive:true, maintainAspectRatio:false, animation:{duration:900},
+    plugins:{legend:{display:false},tooltip:{enabled:false}},
+    scales:{
+      x:{display:false},
+      y:{position:'right',grid:{color:getCSS('--line')},
+         border:{display:false},
+         ticks:{color:getCSS('--muted'),font:{size:14},maxTicksLimit:5,
+                callback:v=>fmt(v)}}
+    }
+  };
+  if(chart){chart.data=data;chart.options=opts;chart.update();}
+  else chart=new Chart(ctx,{type:'line',data,options:opts});
+}
+
+function getCSS(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function hexA(hex,a){const h=hex.replace('#','');const r=parseInt(h.substr(0,2),16),
+  g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16);return `rgba(${r},${g},${b},${a})`;}
+
+async function tick(){
+  const {closes,live,asof}=await loadSeries();
+  render(closes,live,asof);
+}
+tick();
+setInterval(tick, 5*60*1000); // refresh every 5 min
+
+// go fullscreen on first tap (for a real panel / kiosk)
+addEventListener('pointerdown',()=>document.documentElement.requestFullscreen?.().catch(()=>{}),{once:true});
+</script>
+</body>
+</html>
