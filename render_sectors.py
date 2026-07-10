@@ -87,7 +87,7 @@ def gradient_fill(ax,x,y,color,y0):
 
 HTML_TMPL = (
     "<!doctype html><html><head><meta charset=\"utf-8\">"
-    "<meta http-equiv=\"refresh\" content=\"60\">"
+    "<meta http-equiv=\"refresh\" content=\"900\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
     "<title>{sym}</title>"
     "<style>html,body{{margin:0;height:100%;background:#0a0e17;overflow:hidden}}"
