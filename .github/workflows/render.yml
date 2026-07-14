@@ -1,23 +1,56 @@
-name: Render sector charts
+name: Render sector signage
+
+# Triggered by cron-job.org via the GitHub API (workflow_dispatch).
+# The schedule below is only a backstop -- GitHub's own cron is unreliable
+# (documented delays of 5-30+ min, and it skips runs entirely).
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 13-21 * * 1-5"
+    - cron: "*/15 * * * *"
+
+# Required by actions/deploy-pages. Without these the deploy step 403s.
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time. Do NOT cancel an in-progress deploy --
+# a half-finished Pages deployment is how you end up serving a broken site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   render:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install matplotlib numpy
-      - run: python render_sectors.py
-      - run: |
-          git config user.name "vvp-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add -A
-          git commit -m "Update charts" || echo "no changes"
-          git push
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install matplotlib numpy
+
+      - name: Render charts + pages
+        run: python render_sectors.py
+
+      # Publish straight from the runner. Nothing is committed back to the
+      # repo, so there is no branch build -- which is what was hitting the
+      # 10-builds/hour soft limit and throttling us into 500s.
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
