@@ -85,9 +85,47 @@ def gradient_fill(ax,x,y,color,y0):
     verts=[(min(x),y0)]+list(zip(x,y))+[(max(x),y0)]
     clip=Polygon(verts,closed=True,facecolor="none",edgecolor="none"); ax.add_patch(clip); im.set_clip_path(clip)
 
-HTML_TMPL = (
+# ---------------------------------------------------------------------------
+# Two-tier page, so a single bad HTTP response can never permanently brick a
+# panel.
+#
+# The failure we are defending against: the panel fetches SYM.html, GitHub
+# hiccups and serves its 500 page instead, and the panel renders THAT. The
+# meta-refresh tag -- the only thing that would have made the panel ask again
+# -- was inside the page we just lost. Panel is stranded on a unicorn forever.
+#
+# So we split it:
+#   SYM.html       OUTER shell. Static, byte-identical every render, so the
+#                  panel can serve it from its own cache. Refreshes slowly and
+#                  its only job is to (re)load the iframe.
+#   SYM-live.html  INNER page. Refreshes every 5 min, holds the cache-busted
+#                  <img>. This is the one doing the frequent network fetches.
+#
+# Now: if the INNER fetch 500s, only the iframe dies -- the outer shell is
+# still alive and reloads it within OUTER_REFRESH. Self-heals, no human.
+# The outer is only fetched 48x/day instead of 288x, so its own exposure to a
+# bad response drops ~6x, and it is cache-friendly on top of that.
+#
+# Panel URLs do not change: SYM.html is still the URL you point Videri at.
+# ---------------------------------------------------------------------------
+INNER_REFRESH = 300    # 5 min  -- how often a fresh chart lands
+OUTER_REFRESH = 1800   # 30 min -- how fast a stranded panel repairs itself
+
+OUTER_TMPL = (
     "<!doctype html><html><head><meta charset=\"utf-8\">"
-    "<meta http-equiv=\"refresh\" content=\"300\">"
+    "<meta http-equiv=\"refresh\" content=\"{outer}\">"
+    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    "<title>{sym}</title>"
+    "<style>html,body{{margin:0;height:100%;background:#0a0e17;overflow:hidden}}"
+    "iframe{{width:100vw;height:100vh;border:0;display:block}}</style>"
+    "</head><body>"
+    "<iframe src=\"{sym}-live.html\" scrolling=\"no\" frameborder=\"0\"></iframe>"
+    "</body></html>"
+)
+
+INNER_TMPL = (
+    "<!doctype html><html><head><meta charset=\"utf-8\">"
+    "<meta http-equiv=\"refresh\" content=\"{inner}\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
     "<title>{sym}</title>"
     "<style>html,body{{margin:0;height:100%;background:#0a0e17;overflow:hidden}}"
@@ -96,8 +134,14 @@ HTML_TMPL = (
 )
 
 def write_html(symbol, outdir, epoch):
+    # Outer shell: no {v}, so this file is identical on every render and the
+    # panel's cache can satisfy the refresh without touching the network.
     with open(os.path.join(outdir, symbol + ".html"), "w", encoding="utf-8") as f:
-        f.write(HTML_TMPL.format(sym=symbol, v=epoch))
+        f.write(OUTER_TMPL.format(sym=symbol, outer=OUTER_REFRESH))
+    # Inner: cache-buster rotates every render, which is what actually defeats
+    # Videri's media cache (proven -- don't remove it).
+    with open(os.path.join(outdir, symbol + "-live.html"), "w", encoding="utf-8") as f:
+        f.write(INNER_TMPL.format(sym=symbol, inner=INNER_REFRESH, v=epoch))
 
 def render(symbol, outdir):
     name, level = SECTORS[symbol]
