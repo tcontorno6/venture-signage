@@ -6,7 +6,7 @@ name: Render sector signage
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "8,38 * * * *"
 
 # Required by actions/deploy-pages. Without these the deploy step 403s.
 permissions:
