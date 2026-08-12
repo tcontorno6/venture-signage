@@ -109,7 +109,7 @@ def gradient_fill(ax,x,y,color,y0):
 # Panel URLs do not change: SYM.html is still the URL you point Videri at.
 # ---------------------------------------------------------------------------
 INNER_REFRESH = 300    # 5 min  -- how often a fresh chart lands
-OUTER_REFRESH = 1800   # 30 min -- how fast a stranded panel repairs itself
+OUTER_REFRESH = 3600   # 30 min -- how fast a stranded panel repairs itself
 
 OUTER_TMPL = (
     "<!doctype html><html><head><meta charset=\"utf-8\">"
@@ -123,15 +123,25 @@ OUTER_TMPL = (
     "</body></html>"
 )
 
-INNER_TMPL = (
-    "<!doctype html><html><head><meta charset=\"utf-8\">"
-    "<meta http-equiv=\"refresh\" content=\"{inner}\">"
-    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    "<title>{sym}</title>"
-    "<style>html,body{{margin:0;height:100%;background:#0a0e17;overflow:hidden}}"
-    "img{{width:100vw;height:100vh;object-fit:contain;display:block}}</style>"
-    "</head><body><img src=\"{sym}.png?v={v}\" alt=\"{sym}\"></body></html>"
-)
+INNER_TMPL = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{sym}</title>
+<style>html,body{{margin:0;height:100%;background:#0a0e17;overflow:hidden}}
+img{{width:100vw;height:100vh;object-fit:contain;display:block}}</style>
+</head><body><img id="v" src="{sym}.png?v={v}" alt="{sym}">
+<script>
+var last=null;
+async function chk(){{try{{
+var r=await fetch('{sym}.png',{{method:'HEAD',cache:'no-store'}});
+var t=r.headers.get('last-modified')||r.headers.get('etag');
+if(!t)return;
+if(last===null){{last=t;return;}}
+if(t!==last){{var p=new Image();
+p.onload=function(){{document.getElementById('v').src=p.src;last=t;}};
+p.src='{sym}.png?v='+Date.now();}}
+}}catch(e){{}}}}
+setInterval(chk,60000);chk();
+</script></body></html>"""
 
 def write_html(symbol, outdir, epoch):
     # Outer shell: no {v}, so this file is identical on every render and the
