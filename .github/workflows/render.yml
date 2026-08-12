@@ -1,12 +1,8 @@
 name: Render sector signage
 
 # Triggered by cron-job.org via the GitHub API (workflow_dispatch).
-# The schedule below is only a backstop -- GitHub's own cron is unreliable
-# (documented delays of 5-30+ min, and it skips runs entirely).
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "8,38 * * * *"
 
 # Required by actions/deploy-pages. Without these the deploy step 403s.
 permissions:
