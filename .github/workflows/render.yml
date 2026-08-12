@@ -10,11 +10,6 @@ permissions:
   pages: write
   id-token: write
 
-# Only one Pages deployment at a time. Do NOT cancel an in-progress deploy --
-# a half-finished Pages deployment is how you end up serving a broken site.
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   render:
